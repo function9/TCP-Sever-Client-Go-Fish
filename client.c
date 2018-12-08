@@ -14,6 +14,7 @@ void func(int sockfd)
 		if(count > 10){
 			gameOver();
 		}
+		if(buff[0] == '~') gameOver();
         	bzero(buff, sizeof(buff)); 
 		read(sockfd, buff, sizeof(buff)); 
 		if(buff[0] == '*') break;

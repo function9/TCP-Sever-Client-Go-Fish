@@ -19,6 +19,7 @@ void echo(int connfd)
 {  
 	char buff[80];  
 	char check;
+	player_again:
         read(connfd, buff, sizeof(buff)); 
 	if (buff[0] != NULL) {
 		user_guess(buff[0], connfd);
@@ -33,11 +34,10 @@ void echo(int connfd)
 			transfer_cards(&user, &garbage, check);
 			printf("Player 1 books ");
 			printf("%c\n", check);
-			//crashes program for some reason
-			//char buffer[80] = "Player 1 books "; 
-			//buffer[15] = check;
-			//write(connfd, buffer, sizeof(buffer)); 
+			printf("Player 1 gets another turn\n");
+			goto player_again;
 		}
+		computer_again:
 		computer_guess(computer_play(&computer), connfd);
 		check = check_add_book(&computer);
 		if(check != 0){
@@ -50,10 +50,27 @@ void echo(int connfd)
 			transfer_cards(&computer, &garbage, check);	
 			printf("Player 2 books ");
 			printf("%c\n", check);
-			printf("\nPlayer 2 gets another turn\n");
+			printf("Player 2 gets another turn\n");
+			goto computer_again;
 		}
 		print_hand(&user, connfd);
     		print_book(&user, 1, connfd); 
+		print_book2(&computer, connfd);
+		if(game_over(&user) == 1){
+			char buff[] = "Player 1 Wins";
+			write(connfd, buff, sizeof(buff)); 
+			char end[] = "~~";
+			write(connfd, end, sizeof(end)); 
+			exit(0);
+		}
+		if(game_over(&computer) ==1){
+			char buff[] = "Computer Wins";
+			write(connfd, buff, sizeof(buff));
+			char end[] = "~~";
+			write(connfd, end, sizeof(end));  
+			exit(0);
+
+		}
 	}
 	end(connfd);
 }
@@ -64,6 +81,7 @@ int main(int argc, char **argv)
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
     pthread_t tid; 
+    sigaction(SIGPIPE, &(struct sigaction){SIG_IGN}, NULL);
 
     if (argc != 2) {
 	fprintf(stderr, "usage: %s <port>\n", argv[0]);
@@ -99,21 +117,10 @@ void *thread(void *vargp)
     Free(vargp); 
 	print_hand(&user, connfd);
     	print_book(&user, 1, connfd);
+	print_book2(&computer, connfd);
  	end(connfd);
     while(1){	
     	echo(connfd);
-	if(game_over(&user) == 1){
-		char buff[] = "Game Over Player 1 Wins";
-		write(connfd, buff, sizeof(buff)); 
-		end(connfd);
-		break;
-	}
-	if(game_over(&computer) ==1){
-		char buff[] = "Game Over Computer Wins";
-		write(connfd, buff, sizeof(buff)); 
-		end(connfd);
-		break;
-	}
     }
     printf("Closing Connection");
     Close(connfd);
@@ -184,36 +191,30 @@ int deal_player_cards(struct player* target){
 }
 void print_hand(struct player* target, int connfd){
 	struct hand* current = target->card_list;
-	printf("Player 1's Hand - ");
+	//printf("Player 1's Hand - ");
 	char buff[200] = "Player 1's Hand - ";
 	int n = 18;
 	
 	while(current->next != NULL){
-		printf("%c",translate[current->top.rank]);
+		//printf("%c",translate[current->top.rank]);
 		buff[n] = translate[current->top.rank];
 		n++;
-		printf("%c",current->top.suit);
+		//printf("%c",current->top.suit);
 		buff[n] = current->top.suit;
 		n++;
-		printf(" ");
+		//printf(" ");
 		buff[n] = ' ';
 		n++;
 		current = current->next;
 	}
 	buff[n] = '\0';
 	
-	printf("\n");
+	//printf("\n");
 	write(connfd, buff, sizeof(buff)); 
 }
 
 void print_book(struct player* target, int player, int connfd){
 	char buff[200] = "Player 1's Book - ";
-	if(player == 1){ 
-		printf("Player 1's Book - ");
-	}
-	else{
-		 printf("Player 2's Book - ");
-	}
 	int x = 0;
 	int n = 18;
 	while( target->book[x] == 'A' || target->book[x] == '2' || target->book[x] == '3' || target->book[x] == '4' || target->book[x] == '5' || target->book[x] == '6' || target->book[x] == '7' || target->book[x] == '8' || target->book[x] == '9' || target->book[x] == 'T' || target->book[x] == 'J' || target->book[x] == 'Q' || target->book[x] == 'K'){
@@ -223,16 +224,34 @@ void print_book(struct player* target, int player, int connfd){
 			buff[n] = ' ';
 			n++;
 		}
-		printf("%c", target->book[x]);
-		printf(" ");
+		//printf("%c", target->book[x]);
+		//printf(" ");
 		x++;
 	}
 	buff[n] = '\0';
 	write(connfd, buff, sizeof(buff)); 
-	printf("\n");
+	//printf("\n");
+}
+void print_book2(struct player* target, int connfd){
+	char buff[200] = "Player 2's Book - ";
+	int x = 0;
+	int n = 18;
+	while( target->book[x] == 'A' || target->book[x] == '2' || target->book[x] == '3' || target->book[x] == '4' || target->book[x] == '5' || target->book[x] == '6' || target->book[x] == '7' || target->book[x] == '8' || target->book[x] == '9' || target->book[x] == 'T' || target->book[x] == 'J' || target->book[x] == 'Q' || target->book[x] == 'K'){
+			buff[n] = target->book[x];
+			n++;
+			buff[n] = ' ';
+			n++;
+		//printf("%c", target->book[x]);
+		//printf(" ");
+		x++;
+	}
+	buff[n] = '\0';
+	write(connfd, buff, sizeof(buff)); 
+	//printf("\n");
 }
 int add_card(struct player* target, struct card* new_card){
 	struct hand* current = target->card_list;
+	if(current != target->card_list) return 0;
 	while(current->next != NULL){
 		current = current->next;
 	}
@@ -287,7 +306,7 @@ int game_over(struct player* target){
 		while(target->book[count] != NULL){
 			count++;
 		}
-	if(count > 3){
+	if(count > 4){
 		return 1;
 	}
 	return 0;
@@ -355,7 +374,7 @@ void user_guess(char guess, int connfd){
 	//write(connfd, buff, sizeof(buff)); 
 	
 	if(x==0){
-		printf("Player 2 has no %c's\n", guess);
+		//printf("Player 2 has no %c's\n", guess);
 		char buff[200] = "Player 2 has no ";
 		buff[16] = guess;
 		buff[17] = 39;
@@ -364,10 +383,10 @@ void user_guess(char guess, int connfd){
 		write(connfd, buff, sizeof(buff));
 		temp = next_card();
 		add_card(&user, temp);
-		printf("Go Fish, Player 1 Draws ");
-		printf("%c", translate[temp->rank]);
-		printf("%c", temp->suit);
-		printf("\n");
+		//printf("Go Fish, Player 1 Draws ");
+		//printf("%c", translate[temp->rank]);
+		//printf("%c", temp->suit);
+		//printf("\n");
 		char buffer[200] = "Go Fish, Player 1 Draws ";
 		buffer[24] = translate[temp->rank];
 		buffer[25] = temp->suit;
@@ -385,31 +404,33 @@ void user_guess(char guess, int connfd){
 		z += transfer_cards(&computer, &user, guess);
 		size_t count = user.hand_size-1;
 		char buff[200] = "Player 2 has ";
-		printf("Player 2 has ");
+		//printf("Player 2 has ");
 		int n = 13;
 		while(count > 0){
+			if(last->next == NULL) return;
+			if(last == NULL) return;
 			last = last->next;
 			count--;
 			if(count == z && z != 0){
 				buff[n] = translate[last->top.rank];
 				n++;
-				printf("%c", translate[last->top.rank]);
+				//printf("%c", translate[last->top.rank]);
 				buff[n] = last->top.suit;
 				n++;
-				printf("%c", last->top.suit);
+				//printf("%c", last->top.suit);
 				buff[n] = ' ';
 				n++;
-				printf(" ");
+				//printf(" ");
 				z--;
 			}
 		}
-		printf("%c", translate[last->top.rank]);
+		//printf("%c", translate[last->top.rank]);
 		buff[n] = translate[last->top.rank];
 				n++;
-		printf("%c", last->top.suit);
+		//printf("%c", last->top.suit);
 		buff[n] = last->top.suit;
 				n++;
-		printf("\n");
+		//printf("\n");
 		buff[n] = '\n';
 		write(connfd, buff, sizeof(buff));
 	}
@@ -420,7 +441,7 @@ void computer_guess(char guess, int connfd){
 	struct hand* last;
 	int x = search(&user, guess);
 	if(x==0){
-		printf("Player 1 has no %c's\n", guess);
+		//printf("Player 1 has no %c's\n", guess);
 		char buff[200] = "Player 1 has no ";
 		buff[16] = guess;
 		buff[17] = 39;
@@ -429,7 +450,7 @@ void computer_guess(char guess, int connfd){
 		write(connfd, buff, sizeof(buff));
 		temp = next_card();
 		add_card(&computer, temp);
-		printf("Go Fish, Player 2 Draws a Card\n");
+		//printf("Go Fish, Player 2 Draws a Card\n");
 		char buffer[200] = "Go Fish, Player 2 Draws a Card\n";
 		write(connfd, buffer, sizeof(buffer));
 		check_add_book(&computer);
@@ -445,30 +466,30 @@ void computer_guess(char guess, int connfd){
 		size_t count = computer.hand_size-1;
 		char buff[200] = "Player 1 has ";
 		int n = 13;
-		printf("Player 1 has ");
+		//printf("Player 1 has ");
 		while(count > 0){
 			last = last->next;
 			count--;
 			if(count == z && z != 0){
 				buff[n] = translate[last->top.rank];
 				n++;
-				printf("%c", translate[last->top.rank]);
+				//printf("%c", translate[last->top.rank]);
 				buff[n] = last->top.suit;
 				n++;
-				printf("%c", last->top.suit);
+				//printf("%c", last->top.suit);
 				buff[n] = ' ';
 				n++;
-				printf(" ");
+				//printf(" ");
 				z--;
 			}
 		}
-		printf("%c", translate[last->top.rank]);
+		//printf("%c", translate[last->top.rank]);
 		buff[n] = translate[last->top.rank];
 				n++;
-		printf("%c", last->top.suit);
+		//printf("%c", last->top.suit);
 		buff[n] = last->top.suit;
 				n++;
-		printf("\n");
+		//printf("\n");
 		buff[n] = '\n';
 		write(connfd, buff, sizeof(buff));
 	}
@@ -476,17 +497,20 @@ void computer_guess(char guess, int connfd){
 }
 char computer_play(struct player* target){
 	char translate[13] = {'A', '2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K'};
-	printf("Player 2's turn, enter a Rank: ");
+	//printf("Player 2's turn, enter a Rank: ");
 	srand(time(NULL));
-	int random = rand() % (int)target->hand_size;	
-	struct hand* current = target->card_list;
+	int random = rand() % (int)computer.hand_size;	
+	struct hand* current = computer.card_list;
+	if(current != target->card_list){
+		return translate[1];	
+	}
 	while(random-1 > 0){
 		current = current->next;
 		random--;
 	}
 	char send = translate[current->top.rank];
-	printf("%c", send);
-	printf("\n");
+	//printf("%c", send);
+	//printf("\n");
 	return send;
 }
 
